@@ -124,7 +124,16 @@ func (u ReleaseUploader) UploadSingleFile(release pivnet.Release, f *metadata.Pr
 			return err
 		}
 
-		fd := u.getFileData(f.File)
+		fd := ProductFileMetadata{
+			uploadAs:           f.UploadAs,
+			description:        f.Description,
+			fileVersion:        f.FileVersion,
+			docsURL:            f.DocsURL,
+			systemRequirements: f.SystemRequirements,
+			platforms:          f.Platforms,
+			includedFiles:      f.IncludedFiles,
+			fileType:           f.FileType,
+		}
 		productFileConfig, err := u.getProductFileConfig(f.File, awsObjectKey, fd, release)
 		if err != nil {
 			return err
@@ -134,22 +143,23 @@ func (u ReleaseUploader) UploadSingleFile(release pivnet.Release, f *metadata.Pr
 		if err != nil {
 			return err
 		}
+
+		if standalone {
+			u.logger.Info(fmt.Sprintf(
+				"Adding product file: '%s' with ID: %d",
+				f.UploadAs,
+				f.ID,
+			))
+
+			err = u.pivnet.AddProductFile(u.productSlug, release.ID, productFile.ID)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	f.ID = productFile.ID
-
-	if standalone {
-		u.logger.Info(fmt.Sprintf(
-			"Adding product file: '%s' with ID: %d",
-			f.UploadAs,
-			f.ID,
-		))
-
-		err = u.pivnet.AddProductFile(u.productSlug, release.ID, productFile.ID)
-		if err != nil {
-			return err
-		}
-	}
+	u.logger.Info(fmt.Sprintf("FileID: %v", f.ID))
 
 	err = u.pollForProductFile(productFile)
 	if err != nil {

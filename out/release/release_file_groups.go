@@ -34,17 +34,32 @@ type releaseFileGroupsAdderClient interface {
 	AddFileGroup(productSlug string, releaseID int, fileGroupID int) error
 	CreateFileGroup(config pivnet.CreateFileGroupConfig) (pivnet.FileGroup, error)
 	AddToFileGroup(productSlug string, fileGroupID int, productFileID int) error
+	FileGroupsForRelease(productSlug string, releaseID int) ([]pivnet.FileGroup, error)
 }
 
 func (rf ReleaseFileGroupsAdder) AddReleaseFileGroups(release pivnet.Release) error {
+	groups, err := rf.pivnet.FileGroupsForRelease(rf.productSlug, release.ID)
+	if err != nil {
+		return nil
+	}
+
+	groupMapping := make(map[string]int)
+	for _, g := range groups {
+		groupMapping[g.Name] = g.ID
+	}
+
 	for _, fileGroup := range rf.metadata.FileGroups {
-		fileGroupID := fileGroup.ID
-		if fileGroupID == 0 {
+		fileGroupID, ok := groupMapping[fileGroup.Name]
+		if ok {
+			rf.logger.Info(fmt.Sprintf(
+				"Reuse file group with ID: %d",
+				fileGroupID,
+			))
+		} else {
 			rf.logger.Info(fmt.Sprintf(
 				"Creating file group with name: %s",
 				fileGroup.Name,
 			))
-
 			g, err := rf.pivnet.CreateFileGroup(pivnet.CreateFileGroupConfig{
 				ProductSlug: rf.productSlug,
 				Name:        fileGroup.Name,
@@ -56,28 +71,29 @@ func (rf ReleaseFileGroupsAdder) AddReleaseFileGroups(release pivnet.Release) er
 
 			fileGroupID = g.ID
 
-			for _, pf := range fileGroup.ProductFiles {
-				rf.logger.Info(fmt.Sprintf(
-					"Adding product file %d to file group with ID: %d",
-					pf.ID,
-					fileGroupID,
-				))
+			rf.logger.Info(fmt.Sprintf(
+				"Adding file group with ID: %d",
+				fileGroupID,
+			))
 
-				err := rf.pivnet.AddToFileGroup(rf.productSlug, fileGroupID, pf.ID)
-
-				if err != nil {
-					return err
-				}
+			err = rf.pivnet.AddFileGroup(rf.productSlug, release.ID, fileGroupID)
+			if err != nil {
+				return err
 			}
 		}
 
-		rf.logger.Info(fmt.Sprintf(
-			"Adding file group with ID: %d",
-			fileGroupID,
-		))
-		err := rf.pivnet.AddFileGroup(rf.productSlug, release.ID, fileGroupID)
-		if err != nil {
-			return err
+		for _, pf := range fileGroup.ProductFiles {
+			rf.logger.Info(fmt.Sprintf(
+				"Adding product file %d to file group with ID: %d",
+				pf.ID,
+				fileGroupID,
+			))
+
+			err := rf.pivnet.AddToFileGroup(rf.productSlug, fileGroupID, pf.ID)
+
+			if err != nil {
+				return err
+			}
 		}
 	}
 
